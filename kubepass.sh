@@ -42,20 +42,26 @@ function create_cluster {
     echo ">>> ${PREFIX}0 (master) <<<"
     multipass info "${PREFIX}0" 2>/dev/null
     if [[ $? != 0 ]]
-    then multipass launch -n"${PREFIX}0" -c"$((VCPU+1))" -m"${MEM}"G -d"${DISK}"G
+    then 
+         while ! multipass launch -n"${PREFIX}0" -c"$((VCPU+1))" -m"${MEM}"G -d"${DISK}"G </dev/null
+         do echo Retrying in 10 seconds ; sleep 10
+         done
     fi
     cat $FMR | multipass transfer - "${PREFIX}0:$FMR"
     multipass exec "${PREFIX}0" sudo bash $FMR
     multipass exec "${PREFIX}0" sudo cat $FJN >>$FWK    
     for ((c=1 ; c<=$COUNT ; c++))
     do 
-       echo ">>> ${PREFIX}$c (worker) <<<"
-       multipass info "${PREFIX}$c" 2>/dev/null
-       if [[ $? != 0 ]]
-       then multipass launch -n"${PREFIX}$c" -c"${VCPU}" -m"${MEM}"G -d"${DISK}"G
-       fi
-       cat $FWK | multipass transfer - "${PREFIX}$c:$FWK"
-       multipass exec "${PREFIX}$c" sudo bash $FWK "$c"
+        echo ">>> ${PREFIX}$c (worker) <<<"
+        multipass info "${PREFIX}$c" 2>/dev/null
+        if [[ $? != 0 ]]
+        then 
+            while ! multipass launch -n"${PREFIX}$c" -c"${VCPU}" -m"${MEM}"G -d"${DISK}"G </dev/null
+            do echo Retrying in 10 seconds ; sleep 10
+            done
+        fi
+        cat $FWK | multipass transfer - "${PREFIX}$c:$FWK"
+        multipass exec "${PREFIX}$c" sudo bash $FWK "$c"
     done
     multipass exec "${PREFIX}0" sudo microk8s enable dns dashboard storage ingress registry
     multipass exec "${PREFIX}0" sudo microk8s kubectl get nodes
@@ -64,5 +70,12 @@ function create_cluster {
 ME=$0
 # ME=kubepass.sh NET=10.0.0
 awk  'BEGIN { print "NET='$NET'"} /^##begin-init##/,/^##end-init##/ {print} END {print "init_master"}' $ME >$FMR
-awk  'BEGIN { print "NET='$NET'"; print "PREFIX='$PREFIX'" } /^##begin-init##/,/^##end-init##/ {print} END {print "init_worker $1"}' $ME >/tmp/kubepass-worker.sh
+awk  'BEGIN { print "NET='$NET'"; print "PREFIX='$PREFIX'" } /^##begin-init##/,/^##end-init##/ {print} END {print "init_worker $1"}' $ME >$FWK
+
+snap install multipass --classic
 create_cluster
+
+snap install kubectl --classic
+mkdir /root/.kube
+IP=$(multipass list | awk '/kube0/ { print $3}')
+sudo multipass exec kube0 sudo microk8s config | sed -s "s/10.0.0.10/$IP/g" >/root/.kube/config
