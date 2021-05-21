@@ -1,6 +1,7 @@
 ZONE=us-east4-b
 DSIZE=300G
 MTYPE=n1-standard-16
+
 # num workers
 N=5
 # memory
@@ -24,26 +25,30 @@ then
 
   yes | gcloud compute disks delete disk-for-image --zone $ZONE
 
-  gcloud compute firewall-rules create allow-ssh-ingress \
-  --boot-disk-size=
-  --direction=INGRESS \
-  --action=allow \
-  --rules=tcp:22 
+  gcloud compute firewall-rules create allow-ingress \
+  --direction=INGRESS --action=allow \
+  --rules=tcp:22,tcp:80,tcp:443,tcp:16443
 fi
 
 gcloud compute instances create microk8s-test \
-        --zone $ZONE \
-        --min-cpu-platform "Intel Haswell" \
-        --machine-type $MTYPE \
-        --boot-disk-size $DSIZE \
-        --image nested-vm-image \
-        --preemptible
+  --zone $ZONE \
+  --min-cpu-platform "Intel Haswell" \
+  --machine-type $MTYPE \
+  --boot-disk-size $DSIZE \
+  --image nested-vm-image \
+  --preemptible
 
-while ! gcloud compute scp kubepass.sh microk8s-test:kubepass.sh
-do echo Retrying ; sleep 10
+while ! gcloud compute scp all.sh kubepass.sh caddy.sh microk8s-test:
+do echo Retrying in 10 seconds...; sleep 10
 done
-while ! gcloud compute ssh --zone=$ZONE microk8s-test --command="sudo bash kubepass.sh $N $M $D $C"
-do echo Retrying ; sleep 10
-done
-#gcloud compute instances list
-#yes | gcloud compute instances delete microk8s-test
+
+HOSTIP=$(gcloud compute instances list | awk '/microk8s-test/ { gsub(/\./, "-", $6); print $6 }')
+gcloud compute ssh microk8s-test -- sudo  bash all.sh $HOSTIP $N $M $D $C
+gcloud compute scp microk8s-test:kubeconfig .
+kubectl --kubeconfig=kubeconfig get nodes
+echo "--------------"
+echo "Kube config is is $PWD/kubeconfig"
+echo "API is https://api-$HOSTIP.nip.io"
+echo "ADMIN is https://admin-$HOSTIP.nip.io"
+
+

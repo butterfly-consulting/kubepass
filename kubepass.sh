@@ -3,6 +3,7 @@ COUNT=${1:?number of workers}
 MEM=${2:?memory in gigabyte}
 DISK=${3:?disk in gigabyte}
 VCPU=${4:?number of worker\'s vcpu}
+HOSTIP=${5:?public fqdn hostname}
 PREFIX=${PREFIX:=kube}
 NET=${NET:=10.0.0}
 
@@ -21,6 +22,7 @@ function init_worker {
     netplan apply
     apt-get update && apt-get -y upgrade
     snap install microk8s --classic
+    sed -i /var/snap/microk8s/current/certs/csr.conf.template  -e '/DNS.5/ a DNS.6 = kube-'$HOSTIP'.nip.io'
     ufw allow in on cni0 && sudo ufw allow out on cni0
     ufw default allow routed
 } 
@@ -28,7 +30,7 @@ function init_worker {
 # multipass exec kube0 sudo bash
 # NET=10.0.0 IP=10
 function init_master {
-    echo "Adding node $1"
+    echo "Adding master"
     init_worker 0
     echo 'if ! microk8s kubectl get nodes | grep "${PREFIX}0" ; then' >$FJN
     microk8s add-node -l $((24*60*26))| grep 'microk8s join' | grep $NET | head -1 >>$FJN
@@ -39,14 +41,16 @@ function init_master {
 # COUNT=1 MEM=8 DISK=25 VCPU=1 PREFIX=kube NET=10.0.0 IP=10
 function create_cluster {
     echo "*** Creating Cluster $PREFIX ***"
+    # install master
     echo ">>> ${PREFIX}0 (master) <<<"
     multipass info "${PREFIX}0" 2>/dev/null
     if [[ $? != 0 ]]
     then 
-         while ! multipass launch -n"${PREFIX}0" -c"$((VCPU+1))" -m"${MEM}"G -d"${DISK}"G </dev/null
-         do echo Retrying in 10 seconds ; sleep 10
-         done
+        while ! multipass launch -n"${PREFIX}0" -c"$((VCPU+1))" -m"${MEM}"G -d"${DISK}"G </dev/null
+        do echo Retrying in 10 seconds ; sleep 10
+        done
     fi
+    # install workers
     cat $FMR | multipass transfer - "${PREFIX}0:$FMR"
     multipass exec "${PREFIX}0" sudo bash $FMR
     multipass exec "${PREFIX}0" sudo cat $FJN >>$FWK    
@@ -69,13 +73,10 @@ function create_cluster {
 
 ME=$0
 # ME=kubepass.sh NET=10.0.0
-awk  'BEGIN { print "NET='$NET'"} /^##begin-init##/,/^##end-init##/ {print} END {print "init_master"}' $ME >$FMR
-awk  'BEGIN { print "NET='$NET'"; print "PREFIX='$PREFIX'" } /^##begin-init##/,/^##end-init##/ {print} END {print "init_worker $1"}' $ME >$FWK
+awk  'BEGIN { print "NET='$NET'"; print "HOSTIP='$HOSTIP'" } /^##begin-init##/,/^##end-init##/ {print} END {print "init_master"}' $ME >$FMR
+awk  'BEGIN { print "NET='$NET'"; print "HOSTIP='$HOSTIP'" ; print "PREFIX='$PREFIX'" } /^##begin-init##/,/^##end-init##/ {print} END {print "init_worker $1"}' $ME >$FWK
 
 snap install multipass --classic
-create_cluster
-
 snap install kubectl --classic
-mkdir /root/.kube
-IP=$(multipass list | awk '/kube0/ { print $3}')
-sudo multipass exec kube0 sudo microk8s config | sed -s "s/10.0.0.10/$IP/g" >/root/.kube/config
+create_cluster
+kubectl get nodes
