@@ -43,6 +43,7 @@ do echo Retrying in 10 seconds...; sleep 10
 done
 
 HOSTIP=$(gcloud compute instances list | awk '/microk8s-test/ { gsub(/\./, "-", $6); print $6 }')
+# gcloud compute ssh microk8s-test -- sudo HOSTIP=$HOSTIP bash
 gcloud compute ssh microk8s-test -- sudo  bash all.sh $HOSTIP $N $M $D $C
 gcloud compute scp microk8s-test:kubeconfig .
 kubectl --kubeconfig=kubeconfig get nodes

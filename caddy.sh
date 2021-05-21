@@ -46,7 +46,6 @@ EOF
 kubectl apply -f podsvc.yaml
 
 # http://jordiburgos.com/post/2020/reverse-proxy-with-caddy-2.html
-caddy stop
 
 echo '{ email "michele@nimbella.com" }'>Caddyfile
 
@@ -62,4 +61,4 @@ echo "}" >>Caddyfile
 
 caddy fmt --overwrite
 
-caddy start 2> caddy.log &
+caddy reload
