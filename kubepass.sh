@@ -25,6 +25,8 @@ function init_worker {
     sed -i /var/snap/microk8s/current/certs/csr.conf.template  -e '/DNS.5/ a DNS.6 = kube-'$HOSTIP'.nip.io'
     ufw allow in on cni0 && sudo ufw allow out on cni0
     ufw default allow routed
+    microk8s start
+    microk8s status -w
 } 
 
 # multipass exec kube0 sudo bash
